@@ -1,4 +1,5 @@
-﻿import telebot
+﻿import json
+import telebot
 import random
 import time
 from telebot import types
@@ -139,61 +140,77 @@ class RouletteGame:
         if self.current_round % 5 == 0:
          self.min_bet *= 2
     
-    
         return self.wheel_result
         
-    def process_results(self):
-        results = {}
+    def spin_emotion_wheel(self):
+        """Второе колесо рулетки для случайного выбора эмоции по её вероятности"""
+        emotions = list(EMOTIONS.keys())
+        probabilities = [EMOTIONS[emotion]["probability"] for emotion in emotions]
+        selected_emotion = random.choices(emotions, weights=probabilities, k=1)[0]
+        return selected_emotion
         
-        # Process regular number bets
-        for user_id, bets in self.bets.items():
-            player = self.players[user_id]
-            winnings = 0
-            
-            for bet in bets:
-                if bet["number"] == self.wheel_result:
-                    winnings += bet["amount"] * 2  # 35:1 payout for number
-                    
-            if winnings > 0:
-                player["balance"] += winnings
-                results[user_id] = {"type": "number", "winnings": winnings, "bet": bet}
+    def process_results(self):
+      results = {}
+      emotion_result = self.spin_emotion_wheel()
+    
+    # Process regular number bets
+      for user_id, bets in self.bets.items():
+        player = self.players[user_id]
+        winnings = 0
+        
+        for bet in bets:
+            if bet["number"] == self.wheel_result:
+                winnings += bet["amount"] * 2
                 
-        # Process emotion bets
-        for user_id, emotion_bets in self.emotion_bets.items():
-            player = self.players[user_id]
-            winnings = 0
-            
+        if winnings > 0:
+            player["balance"] += winnings
+            results[user_id] = {"type": "number", "winnings": winnings, "bet": bet}
+    
+    # Process emotion bets
+      for user_id, emotion_bets in self.emotion_bets.items():
+        player = self.players[user_id]
+        winnings = 0
+        
+        for emotion, bet_amount in emotion_bets.items():
+            # Check if the player has this emotion
+            if emotion == emotion_result:
+                # Calculate winnings based on multiplier
+                multiplier = EMOTIONS[emotion]["multiplier"]
+                winnings += bet_amount * multiplier
+                
+                # Reduce emotion intensity
+                player["emotions"][emotion] = max(0, player["emotions"][emotion] - bet_amount)
+                
+        if winnings > 0:
+            player["balance"] += winnings
+            results[user_id] = {"type": "emotion", "winnings": winnings, "emotion": emotion_result}
+        else:
+            # Если не угадали эмоцию, вычитаем ставку из баланса
             for emotion, bet_amount in emotion_bets.items():
-                # Check if the player has this emotion
+                player["balance"] -= bet_amount
+                # Добавляем эмоцию игроку при проигрыше
                 if emotion in player["emotions"]:
-                    # Calculate winnings based on multiplier
-                    multiplier = EMOTIONS[emotion]["multiplier"]
-                    winnings += bet_amount * multiplier
-                    
-                    # Reduce emotion intensity
-                    player["emotions"][emotion] = max(0, player["emotions"][emotion] - bet_amount)
-                    
-            if winnings > 0:
-                player["balance"] += winnings
-                results[user_id] = {"type": "emotion", "winnings": winnings, "emotion": emotion}
+                    player["emotions"][emotion] += bet_amount
+                else:
+                    player["emotions"][emotion] = bet_amount
+    
+    # Process dual bets - только если выпадают оба условия
+      for user_id, dual_bets in self.dual_bets.items():
+        player = self.players[user_id]
+        winnings = 0
+        
+        for dual_bet in dual_bets:
+            # Проверяем, что выпало и число, и эмоция
+            if dual_bet["number"] == self.wheel_result and dual_bet["emotion"] == emotion_result:
+                # Для дуэльных ставок выигрыш только если выпадают оба условия
+                multiplier = EMOTIONS[dual_bet["emotion"]]["multiplier"]
+                winnings += (dual_bet["number_amount"] + dual_bet["emotion_amount"]) * multiplier * 2
                 
-        # Process dual bets - только если выпадают оба условия
-        for user_id, dual_bets in self.dual_bets.items():
-            player = self.players[user_id]
-            winnings = 0
-            
-            for dual_bet in dual_bets:
-                # Проверяем, что выпало и число, и эмоция
-                if dual_bet["number"] == self.wheel_result:
-                    # Для дуэльных ставок выигрыш только если выпадают оба условия
-                    multiplier = EMOTIONS[dual_bet["emotion"]]["multiplier"]
-                    winnings += (dual_bet["number_amount"] + dual_bet["emotion_amount"]) * multiplier
-                    
-            if winnings > 0:
-                player["balance"] += winnings
-                results[user_id] = {"type": "dual", "winnings": winnings, "number": dual_bet["number"], "emotion": dual_bet["emotion"]}
+        if winnings > 0:
+            player["balance"] += winnings
+            results[user_id] = {"type": "dual", "winnings": winnings, "number": dual_bet["number"], "emotion": dual_bet["emotion"]}
                 
-        return results
+      return results, emotion_result
         
     def reset_bets(self):
         """Очистка всех ставок после завершения раунда"""
@@ -219,13 +236,14 @@ class RouletteGame:
 def send_welcome(message):
     bot.reply_to(message, 
         "Добро пожаловать в рулетку с негативными эмоциями! 🎰\n\n"
-        "Играете с другими игроками? Напишите /newgame чтобы создать новую игру.\n"
-        "Хотите играть одному? Просто делайте ставки!\n\n"
+        "Напишите /newgame чтобы создать новую игру.\n"
         "Правила:\n"
         "• Ставки на числа от 0 до 32\n"
         "• Ставки на негативные эмоции с различными множителями\n"
         "• Выигрыш: вы получаете множитель по вашей ставке\n"
-        "• Проигрыш: вы теряете фишки и получаете эмоцию\n\n"
+        "• Проигрыш: вы теряете фишки и получаете негативную эмоцию\n"
+        "• Количество игроков не ограниченно\n"
+        "• Прочитать подробные правила - напишите /rules\n\n"
         "Используйте /help для подробной информации.")
 
 @bot.message_handler(commands=['newgame'])
@@ -249,7 +267,7 @@ def create_game(message):
         f"Игра создана! 🎉\n\n"
         f"Игроки: {username}\n"
         f"Используйте /join чтобы присоединиться к игре.\n"
-        f"Когда будет достаточно игроков, начните игру командой /startgame.")
+        f"Когда будет достаточно игроков, начните игру командой /begingame.")
 
 @bot.message_handler(commands=['join'])
 def join_game(message):
@@ -272,9 +290,9 @@ def join_game(message):
     bot.reply_to(message, 
         f"Вы присоединились к игре!\n\n"
         f"Текущие игроки:\n{player_list}\n\n"
-        f"Когда будет достаточно игроков, начните игру командой /startgame.")
+        f"Когда будет достаточно игроков, начните игру командой /begingame.")
 
-@bot.message_handler(commands=['startgame'])
+@bot.message_handler(commands=['begingame'])
 def start_game(message):
     chat_id = message.chat.id
     
@@ -284,8 +302,8 @@ def start_game(message):
         
     game = games[chat_id]
     
-    if len(game.players) < 2:
-        bot.reply_to(message, "Для начала игры нужно как минимум 2 игрока. Используйте /join чтобы присоединиться.")
+    if len(game.players) < 1:
+        bot.reply_to(message, "Для начала игры нужно как минимум 1 игрок. Используйте /join чтобы присоединиться.")
         return
         
     game_states[chat_id] = "active"
@@ -300,11 +318,13 @@ def start_game(message):
         f"Сделайте ставки с помощью команд:\n"
         f"/bet_number <количество> <номер>\n"
         f"/bet_emotion <количество> <эмоция>\n"
-        f"/bet_number_emotion <количество числа> <количество эмоции> <номер> <эмоция>\n\n"
+        f"/bet_dual <количество числа> <количество эмоции> <номер> <эмоция>\n\n"
         f"Примеры:\n"
         f"/bet_number 5 17\n"
         f"/bet_emotion 3 Стыд\n"
-        f"/bet_number_emotion 2 4 17 Стыд")
+        f"/bet_dual 2 4 17 Стыд\n"
+        f"Подсказка: чтобы дополнить команду bet зажмите её. На десктопной версии нажать Tab"
+        )
 
 @bot.message_handler(commands=['endgame'])
 def end_game(message):
@@ -398,7 +418,7 @@ def place_emotion_bet(message):
     except (ValueError, IndexError):
         bot.reply_to(message, "Неправильный формат. Используйте: /bet_emotion <количество> <эмоция>")
 
-@bot.message_handler(commands=['bet_number_emotion'])
+@bot.message_handler(commands=['bet_dual'])
 def place_dual_bet(message):
     chat_id = message.chat.id
     
@@ -444,7 +464,7 @@ def place_dual_bet(message):
             f"Баланс: {game.players[user_id]['balance']}")
 
     except (ValueError, IndexError):
-        bot.reply_to(message, "Неправильный формат. Используйте: /bet_number_emotion <количество числа> <количество эмоции> <номер> <эмоция>")
+        bot.reply_to(message, "Неправильный формат. Используйте: /bet_dual <количество числа> <количество эмоции> <номер> <эмоция>")
 
 @bot.message_handler(commands=['spin'])
 def spin_wheel(message):
@@ -465,10 +485,14 @@ def spin_wheel(message):
     result = game.spin_wheel()
     
     # Process results
-    results = game.process_results()
+    results, emotion_result = game.process_results()
     
     # Send results to players
-    message_text = f"Колесо рулетки остановилось на числе {result}! 🎰\n\n"
+    message_text = f"Колесо рулетки остановилось на числе {result}! 🎰\n"
+    message_text += f"Второе колесо рулетки выпало: {emotion_result}!\n\n"
+    
+    # Track which players received the emotion
+    emotion_winners = []
     
     if not results:
         message_text += "Никто не выиграл. Попробуйте снова!"
@@ -478,13 +502,35 @@ def spin_wheel(message):
             username = player["username"]
             
             if result_data["type"] == "number":
-                message_text += f"@{username} выиграл {result_data['winnings']} фишек на ставке на число {result_data['number']}!\n"
+                message_text += f"@{username} выиграл {result_data['winnings']} фишек на ставке на число {result_data['bet']['number']}!\n"
             elif result_data["type"] == "emotion":
-                message_text += f"@{username} выиграл {result_data['winnings']} фишек на эмоции '{result_data['emotion']}'!\n"
-            else:
-                message_text += f"@{username} выиграл {result_data['winnings']} фишек на ставке на число {result_data['number']} и эмоцию '{result_data['emotion']}'!\n"
+                # Проверяем, выиграл ли игрок на эмоцию
+                if result_data["emotion"] == emotion_result:
+                    message_text += f"@{username} выиграл {result_data['winnings']} фишек на эмоции '{result_data['emotion']}'!\n"
+                    emotion_winners.append(username)
+                else:
+                    # Игрок проиграл на эмоцию
+                    if result_data["emotion"] in player["emotions"]:
+                        message_text += f"@{username} проиграл ставку на эмоцию '{result_data['emotion']}'!\n"
+                        # Увеличиваем интенсивность эмоции в 2 раза
+                        player["emotions"][result_data["emotion"]] *= 2
+                    else:
+                        message_text += f"@{username} проиграл ставку на эмоцию '{result_data['emotion']}' и получил её!\n"
+                        player["emotions"][result_data["emotion"]] = result_data["winnings"]
+            elif result_data["type"] == "dual":
+                # Dual bet
+                if result_data["emotion"] == emotion_result:
+                    message_text += f"@{username} выиграл {result_data['winnings']} фишек на эмоции '{result_data['emotion']}'!\n"
+                    emotion_winners.append(username)
+                else:
+                    if result_data["emotion"] in player["emotions"]:
+                        message_text += f"@{username} проиграл ставку на эмоцию '{result_data['emotion']}'!\n"
+                        player["emotions"][result_data["emotion"]] *= 2
+                    else:
+                        message_text += f"@{username} проиграл ставку на эмоцию '{result_data['emotion']}' и получил её!\n"
+                        player["emotions"][result_data["emotion"]] = result_data["winnings"]
     
-    # Show current balances
+        
     message_text += "\nТекущие балансы:\n"
     for user_id, player in game.players.items():
         username = player["username"]
@@ -556,25 +602,33 @@ def show_rules(message):
 
 1. Ставки на числа:
    - От 0 до 32
-   - Выигрыш умножается на множитель ставки
+   - Выигрыш умножается на 2 от ставки
 
 2. Ставки на эмоции:
-   - Множитель зависит от силы эмоции (от 3 до 20)
-   - Чем сильнее эмоция, тем больше выигрыш
-   - Вероятность выпадения обратно пропорциональна множителю
+   - Вместо черного и красного есть 10 негативных эмоций. см. по команде /emotions
+   - Множитель выигрыша зависит от силы эмоции (от 3 до 20)
+   - Вероятность выпадения эмоции обратно пропорциональна её множителю
 
 3. Выигрыш:
-   - Вы получаете в два раза юольшее количество фишек или количество фишек умноженное на коэффициент эмоции. 
+   - Вы получаете в два раза большее количество фишек если ставили только на число или количество фишек умноженное на коэффициент эмоции, если ставили на негативную эмоцию. 
    - Если у вас уже была негатиная эмоция, то эффект ослабевает пропорционально вашей текущей ставке относительно той, когда вы проиграли
+   - Двойная ставка (bet_dual) выигрывает только в случае, если выпали одновременно и число и эмоция. 
 
 4. Проигрыш:
-   - Вы теряете поставленные фишки
-   - Получаете негативную эмоцию
-   - Если у вас уже была эмоция и вы проиграли повторно, то эмоция усиливается
+   - Вы теряете поставленные фишки.
+   - Получаете негативную эмоцию.
+   - Если у вас уже была негативная эмоция и вы проиграли на ней повторно, то эмоция усиливается.
+   - Информацию о количестве фишек, которое надо отыграть, чтобы негативная эмоция пропала см. в профиле игрока по команде /player_info
 
 5. Ограничения:
-   - Максимум усиления 3 раза на все эмоции, кроме Ослепляющей ненависти и Беспросветного отчаяния
-   - Ослепляющая ненависть и Беспросветное отчаяние усиливаются только 2 раза
+   - Начальная минимальная ставка - 5 фишек.
+   - Каждые 5 вращений минимальная ставка удваивается.
+   - За один раунд можно делать неограниченное количество ставок.
+   - Минимальное количество игроков - 1.
+   - Максимальное количество комнат для игры - 1.
+   - Если начать новую игру, завершить текущую игру или покунуть её командой /leave ваш прогресс не сохранится.
+   - Спустя 5 минут после отсутствия активности в боте (отправление команд) игра сбрасывается.
+
 
 """
     bot.reply_to(message, rules)
@@ -726,11 +780,11 @@ def send_help(message):
         "/start - Приветствие и правила игры\n"
         "/newgame - Создать новую игру\n"
         "/join - Присоединиться к существующей игре\n"
-        "/startgame - Начать активную игру\n"
+        "/begingame - Начать активную игру\n"
         "/endgame - Завершить текущую игру\n"
         "/bet_number <количество> <номер> - Ставка на число (0-32)\n"
         "/bet_emotion <количество> <эмоция> - Ставка на негативную эмоцию\n"
-        "/bet_number_emotion <количество числа> <количество эмоции> <номер> <эмоция> - Ставка на число и эмоцию одновременно\n"
+        "/bet_dual <количество числа> <количество эмоции> <номер> <эмоция> - Ставка на число и эмоцию одновременно\n"
         "/spin - Крутить колесо рулетки и показать результаты\n"
         "/history - Показать историю ставок в текущей игре\n"
         "/balance - Показать ваш баланс\n"
@@ -747,15 +801,85 @@ def send_help(message):
     
     bot.reply_to(message, help_text)
 
-    # Обработчик для неправильного формата команды
+# Обработчик для неправильного формата команды
 @bot.message_handler(func=lambda message: True)
 def handle_unknown_command(message):
     if message.text.startswith('/'):
         bot.reply_to(message, "Неизвестная команда. Используйте /help для получения справки.")
 
-if __name__ == "__main__":
-    print("Бот запущен...")
+# Обработчик запросов для Яндекс Функции
+def handler(event, context):
     try:
-        bot.polling(none_stop=True)
+        # Получаем JSON из запроса
+        body = json.loads(event['body'])
+        
+        # Создаем объект telebot.types.Message из JSON
+        message_data = body.get('message', {})
+        
+        if not message_data:
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': 'No message data'})
+            }
+            
+        # Создаем объект Message
+        message = telebot.types.Message.de_json(json.dumps(message_data))
+        
+        # Обрабатываем команду
+        if message.text:
+            text = message.text.lower()
+            
+            if text.startswith('/start'):
+                send_welcome(message)
+            elif text.startswith('/newgame'):
+                create_game(message)
+            elif text.startswith('/join'):
+                join_game(message)
+            elif text.startswith('/begingame'):
+                start_game(message)
+            elif text.startswith('/endgame'):
+                end_game(message)
+            elif text.startswith('/bet_number'):
+                place_number_bet(message)
+            elif text.startswith('/bet_emotion'):
+                place_emotion_bet(message)
+            elif text.startswith('/bet_dual'):
+                place_dual_bet(message)
+            elif text.startswith('/spin'):
+                spin_wheel(message)
+            elif text.startswith('/balance'):
+                show_balance(message)
+            elif text.startswith('/emotions'):
+                show_emotions(message)
+            elif text.startswith('/emotion_info'):
+                show_emotion_info(message)
+            elif text.startswith('/rules'):
+                show_rules(message)
+            elif text.startswith('/status'):
+                show_game_status(message)
+            elif text.startswith('/player_info'):
+                show_player_info(message)
+            elif text.startswith('/history'):
+                show_bet_history(message)
+            elif text.startswith('/game_info'):
+                show_game_info(message)
+            elif text.startswith('/leave'):
+                leave_game(message)
+            elif text.startswith('/check_bets'):
+                check_all_bets(message)
+            elif text.startswith('/help'):
+                send_help(message)
+            else:
+                handle_unknown_command(message)
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'result': 'success'})
+        }
+        
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Ошибка обработки запроса: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
