@@ -7,7 +7,7 @@ from telebot import types
 from collections import defaultdict, deque
 
 # Initialize the bot with your token (replace 'YOUR_BOT_TOKEN' with actual token)
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
 # Game state storage
