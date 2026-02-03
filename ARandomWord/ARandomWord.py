@@ -807,79 +807,11 @@ def handle_unknown_command(message):
     if message.text.startswith('/'):
         bot.reply_to(message, "Неизвестная команда. Используйте /help для получения справки.")
 
-# Обработчик запросов для Яндекс Функции
-def handler(event, context):
+if __name__ == "__main__":
+    print("Бот запущен...")
     try:
-        # Получаем JSON из запроса
-        body = json.loads(event['body'])
-        
-        # Создаем объект telebot.types.Message из JSON
-        message_data = body.get('message', {})
-        
-        if not message_data:
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'result': 'No message data'})
-            }
-            
-        # Создаем объект Message
-        message = telebot.types.Message.de_json(json.dumps(message_data))
-        
-        # Обрабатываем команду
-        if message.text:
-            text = message.text.lower()
-            
-            if text.startswith('/start'):
-                send_welcome(message)
-            elif text.startswith('/newgame'):
-                create_game(message)
-            elif text.startswith('/join'):
-                join_game(message)
-            elif text.startswith('/begingame'):
-                start_game(message)
-            elif text.startswith('/endgame'):
-                end_game(message)
-            elif text.startswith('/bet_number'):
-                place_number_bet(message)
-            elif text.startswith('/bet_emotion'):
-                place_emotion_bet(message)
-            elif text.startswith('/bet_dual'):
-                place_dual_bet(message)
-            elif text.startswith('/spin'):
-                spin_wheel(message)
-            elif text.startswith('/balance'):
-                show_balance(message)
-            elif text.startswith('/emotions'):
-                show_emotions(message)
-            elif text.startswith('/emotion_info'):
-                show_emotion_info(message)
-            elif text.startswith('/rules'):
-                show_rules(message)
-            elif text.startswith('/status'):
-                show_game_status(message)
-            elif text.startswith('/player_info'):
-                show_player_info(message)
-            elif text.startswith('/history'):
-                show_bet_history(message)
-            elif text.startswith('/game_info'):
-                show_game_info(message)
-            elif text.startswith('/leave'):
-                leave_game(message)
-            elif text.startswith('/check_bets'):
-                check_all_bets(message)
-            elif text.startswith('/help'):
-                send_help(message)
-            else:
-                handle_unknown_command(message)
-        
-        return {
-            'statusCode': 200,
-            'body': json.dumps({'result': 'success'})
-        }
-        
+        bot.polling(none_stop=True)
     except Exception as e:
-        print(f"Ошибка обработки запроса: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        print(f"Ошибка: {e}")
+
+       
