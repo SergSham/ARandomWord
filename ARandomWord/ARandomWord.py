@@ -1,4 +1,5 @@
-﻿import json
+﻿import os
+import json
 import telebot
 import random
 import time
@@ -6,7 +7,7 @@ from telebot import types
 from collections import defaultdict, deque
 
 # Initialize the bot with your token (replace 'YOUR_BOT_TOKEN' with actual token)
-TOKEN = '8204537981:AAEA-CgGQEg2t9qH_8bK3bFDPGS8Kmquc9Y'
+TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
 # Game state storage
