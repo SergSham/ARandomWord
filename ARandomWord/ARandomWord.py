@@ -3,6 +3,8 @@ import json
 import telebot
 import random
 import time
+from flask import Flask
+from threading import Thread
 from telebot import types
 from collections import defaultdict, deque
 
@@ -807,6 +809,33 @@ def send_help(message):
 def handle_unknown_command(message):
     if message.text.startswith('/'):
         bot.reply_to(message, "Неизвестная команда. Используйте /help для получения справки.")
+
+
+        # 1. Создаем Flask-сервер
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "I'm alive!"
+
+def run():
+    # Render передает порт в переменную окружения PORT
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# 2. Функция для запуска сервера в фоновом режиме
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# 3. Основной запуск бота
+if __name__ == "__main__":
+    print("Запуск сервера активности...")
+    keep_alive()
+    
+    print("Запуск бота...")
+    # Здесь ваш код запуска бота, например:
+    # bot.infinity_polling() 
 
 if __name__ == "__main__":
     print("Бот запущен...")
