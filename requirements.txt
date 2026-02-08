@@ -1,2 +1,3 @@
 pyTelegramBotAPI==4.27
 yandex-speechkit==1.5.0
+flask
